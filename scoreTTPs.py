@@ -1,14 +1,15 @@
-#This program does exacly what attack navigator does, but better.
+#This program does exactly what attack navigator does, but better.
 #It takes an excel file as input, extracts the first column from all the sheets
-#and displayes TTPs in descending order of their frequency, along with actor names. 
+#and displayes TTPs in descending order of their frequency, along with actor names.
 
 import pandas as pd
+from openpyxl import load_workbook
 
 # Provide the path to your Excel file
 excel_file_path = "PS, Financian, Govt targeting actors TTPs.xlsx"
 
 # Load the Excel file into a Pandas DataFrame
-excel_data = pd.read_excel(excel_file_path, header=None, sheet_name=None, skiprows=None)
+excel_data = pd.read_excel(excel_file_path, header=None, sheet_name=None, engine='openpyxl')
 
 # Initialize a dictionary to store entry frequencies and associated sheets
 entry_freq = {}
@@ -32,8 +33,28 @@ for sheet_name, sheet_data in excel_data.items():
 # Sort the entries based on their frequencies in descending order
 sorted_entries = sorted(entry_freq.items(), key=lambda x: x[1]['frequency'], reverse=True)
 
-# Print the entries along with their frequencies and associated sheets
+# Create a list to hold the data for the new sheet
+new_sheet_data = []
+
+# Populate the new_sheet_data list with the sorted entries
 for entry, data in sorted_entries:
     frequency = data['frequency']
     sheets = ', '.join(data['sheets'])
-    print(f"Technique ID: {entry}\tScore: {frequency}\tSheets: {sheets}")
+    new_sheet_data.append([entry, frequency, sheets])
+
+# Convert the new_sheet_data list into a DataFrame
+new_sheet_df = pd.DataFrame(new_sheet_data, columns=['Technique ID', 'Score', 'Actor name'])
+
+# Load the existing workbook
+book = load_workbook(excel_file_path)
+
+# Add the new sheet with the DataFrame data
+with pd.ExcelWriter(excel_file_path, engine='openpyxl', mode='a') as writer:
+    writer._book = book
+    new_sheet_df.to_excel(writer, sheet_name='Summary', index=False)
+
+# Reorder the sheets to make the "Summary" sheet the first one
+book._sheets.insert(0, book._sheets.pop(-1))
+book.save(excel_file_path)
+
+print("New sheet 'Summary' added as the first sheet in the Excel workbook successfully.")
