@@ -1,9 +1,9 @@
 import pandas as pd
 import json
 import copy
+from openpyxl import load_workbook
 from collections import Counter
 import matplotlib.colors as mcolors
-from openpyxl import load_workbook
 
 def clean_TTPs(file_path):
     # Load the Excel file
@@ -17,9 +17,17 @@ def clean_TTPs(file_path):
         # Read the sheet into a DataFrame without header
         df = pd.read_excel(xls, sheet_name, header=None)
 
+        # Ensure there are at least two columns
+        if df.shape[1] < 2:
+            print(f"Skipping sheet {sheet_name} as it does not have at least two columns.")
+            continue
+
+        # Convert columns to string type to avoid any issues with join operation
+        df[0] = df[0].astype(str)
+        df[1] = df[1].astype(str)
+
         # Group by the first column (TTPs) and aggregate the second column (Source) as a comma-separated string
-        df[1] = df.groupby(0)[1].transform(lambda x: ', '.join(x))
-        df.drop_duplicates(inplace=True)
+        df = df.groupby(0, as_index=False).agg(lambda x: ', '.join(x))
 
         # Append the DataFrame to the list
         all_dfs.append(df)
@@ -83,64 +91,64 @@ def create_summary_sheet(excel_file_path):
 
     print("New sheet 'Summary' added as the first sheet in the Excel workbook successfully.")
 
+def generate_gradient(start_color, end_color, num_colors):
+    cmap = mcolors.LinearSegmentedColormap.from_list('custom_gradient', [start_color, end_color])
+    num_steps = num_colors
+    gradient = [mcolors.to_hex(cmap(i / (num_steps - 1))) for i in range(num_steps)]
+    return gradient
+
 def clubjson(file_path):
-    # Load the master JSON
     master_json = {}
     with open("layer.json", "r") as json_file:
         master_json = json.load(json_file)
     master_json2 = copy.deepcopy(master_json)
 
     # Load the Excel file into a Pandas DataFrame
-    excel_data = pd.read_excel(file_path, header=None, sheet_name=None, skiprows=None)
+    excel_data = pd.read_excel(file_path, header=None, sheet_name=None, engine='openpyxl')
 
     # Initialize a dictionary to store entry frequencies and associated sheets
     entry_freq = {}
 
+    # Initialize a dictionary to store TTP ID to sheet sources mapping
+    ttp_sources = {}
+
     for sheet_name, sheet_data in excel_data.items():
         known_techniques = sheet_data.iloc[:, 0].tolist()
+        sources = sheet_data.iloc[:, 1].tolist()
 
         freq = Counter(known_techniques)
 
-        for k, v in freq.items():
-            if k not in entry_freq:
-                entry_freq[k] = 0
+        for ttp, source in zip(known_techniques, sources):
+            if ttp not in entry_freq:
+                entry_freq[ttp] = 0
+            entry_freq[ttp] += 1
 
-            entry_freq[k] += v
+            if ttp not in ttp_sources:
+                ttp_sources[ttp] = []
+            ttp_sources[ttp].append(f"{sheet_name}: {source}")
 
-    # Determine the max value for color gradient
-    max_value = max(entry_freq.values(), default=1)  # Avoid division by zero if empty
+    known_techs = entry_freq.keys()
 
-    # Generate the color gradient
-    def generate_gradient(start_color, end_color, num_steps):
-        if num_steps <= 1:
-            return [start_color]
-        
-        cmap = mcolors.LinearSegmentedColormap.from_list("gradient", [start_color, end_color], N=num_steps)
-        return [mcolors.to_hex(cmap(i / (num_steps - 1))) for i in range(num_steps)]
+    filtered = [t for t in master_json2["techniques"] if t["techniqueID"].lower() in known_techs]
 
-    num_colors = max_value  # Equal number of colors as maxValue
+    for item in filtered:
+        item["score"] = entry_freq[item["techniqueID"].lower()]
+        item["comment"] = '\n'.join(ttp_sources.get(item["techniqueID"].lower(), []))
+
+    # Determine the max frequency and generate the gradient colors
+    max_value = max(entry_freq.values(), default=1)
+    num_colors = max_value
     colors = generate_gradient("#8ec843", "#ff6666", num_colors)  # Light green to medium red
 
-    # Filter techniques and add scores
-    known_techs = entry_freq.keys()
-    filtered_techs = [t for t in master_json2["techniques"] if t["techniqueID"].lower() in known_techs]
+    master_json2["techniques"] = filtered
+    master_json2["gradient"]["colors"] = colors
+    master_json2["gradient"]["minValue"] = 1
+    master_json2["gradient"]["maxValue"] = max_value
 
-    for item in filtered_techs:
-        item["score"] = entry_freq[item["techniqueID"].lower()]
-
-    # Update master_json2 with filtered techniques and new gradient
-    master_json2["techniques"] = filtered_techs
-    master_json2["gradient"] = {
-        "colors": colors,
-        "minValue": 1,
-        "maxValue": max_value
-    }
-
-    # Write the updated JSON to a new file
     with open("allActorsClubbed.json", "w") as op:
         json.dump(master_json2, op, indent=4)
 
-    print("Updated allActorsClubbed.json with new color gradient and scores.")
+    print("Processed and saved the TTP data to allActorsClubbed.json")
 
 def main():
     file_path = 'ActorTTPs.xlsx'
@@ -148,7 +156,7 @@ def main():
     # Clean the TTPs
     clean_TTPs(file_path)
     
-    # Update allActorsClubbed.json
+    # Generate the clubbed JSON
     clubjson(file_path)
     
     # Create the summary sheet
