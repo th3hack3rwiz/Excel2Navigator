@@ -73,6 +73,8 @@ def process_single_sheet(excel_file_path):
         print(f"[+] Processed sheet: {sheet_name}, ATT&CK Navigator file created and saved to {output_path}")
 
 def nameTTPs(excel_file_path):
+    print("[+] Mapping TTP codes to their respective Tactics and Techniques...")
+    
     # Create a dictionary to store variable-value pairs from the TTP code-name index.txt file
     variable_dict = {}
 
@@ -138,9 +140,11 @@ def nameTTPs(excel_file_path):
         with pd.ExcelWriter(excel_file_path, engine='openpyxl', mode='a', if_sheet_exists='replace') as writer:
             excel_data.to_excel(writer, sheet_name=sheet_name, index=False)
 
-    print("[+] Mapping TTP codes to their respective Tactics and Techniques...")
+    
 
 def clean_TTPs(excel_file_path):
+    print(f"[+] Removing redundant TTP codes in each sheet while preserving every source... ")
+
     # Load the Excel file
     xls = pd.ExcelFile(excel_file_path)
 
@@ -172,9 +176,11 @@ def clean_TTPs(excel_file_path):
         for sheet_name, df in all_dfs:
             df.to_excel(writer, sheet_name=sheet_name, index=False, header=None)
 
-    print(f"[+] Removing redundant TTP codes in each sheet while preserving every source... ")
+    
 
 def create_summary_sheet(excel_file_path):
+    print("[+] Creating 'Summary' sheet as the first sheet in the Excel workbook.")
+
     # Load the Excel file into a Pandas DataFrame
     excel_data = pd.read_excel(excel_file_path, header=None, sheet_name=None, engine='openpyxl')
 
@@ -224,9 +230,11 @@ def create_summary_sheet(excel_file_path):
     book._sheets.insert(0, book._sheets.pop(-1))
     book.save(excel_file_path)
 
-    print("[+] Creating 'Summary' sheet as the first sheet in the Excel workbook.")
+    
 
 def add_header_row(excel_file_path):
+    print("[+] Adding required headers...")
+
     # Load the workbook
     book = load_workbook(excel_file_path)
 
@@ -242,7 +250,31 @@ def add_header_row(excel_file_path):
 
     # Save the updated workbook
     book.save(excel_file_path)
-    print("[+] Adding required headers...")
+    
+
+def adjust_cells(excel_file_path):
+    print("[+] Adjusting cell width for better readability...")
+    # Load the workbook
+    wb = load_workbook(excel_file_path)
+
+    # Iterate through all sheets
+    for ws in wb.worksheets:
+        # Adjust column widths
+        for col in ws.columns:
+            max_length = 0
+            column = col[0].column_letter  # Get the column name
+            for cell in col:
+                try:
+                    if len(str(cell.value)) > max_length:
+                        max_length = len(cell.value)
+                except:
+                    pass
+            adjusted_width = (max_length + 2) * 1.2
+            ws.column_dimensions[column].width = adjusted_width
+
+    # Save the workbook
+    wb.save(excel_file_path)
+
 
 def generate_gradient(start_color, end_color, num_colors):
     cmap = mcolors.LinearSegmentedColormap.from_list('custom_gradient', [start_color, end_color])
@@ -251,6 +283,8 @@ def generate_gradient(start_color, end_color, num_colors):
     return gradient
 
 def clubjson(excel_file_path):
+    print("[+] Creating Heatmap.json...")
+
     master_json = {}
     with open("layer.json", "r") as json_file:
         master_json = json.load(json_file)
@@ -301,7 +335,7 @@ def clubjson(excel_file_path):
     with open("Heatmap.json", "w") as op:
         json.dump(master_json2, op, indent=4)
 
-    print("[+] Creating Heatmap.json...")
+    
 
 def downloadRequirements():
     # URL of the GitHub Gist for layer.json file containing all TTPs from MITRE ATT&CK Navigator having a score of 1
@@ -330,7 +364,7 @@ def downloadRequirements():
         # Save the content to a file
         with open("TTP code-name index.txt", "w") as file:
             file.write(response.text)
-        print("[+] TTP code-name index.txt file saved successfully.")
+        print("[+] TTP code-name index.txt file fetched successfully.")
     else:
         print(f"[-] Failed to fetch the gist. Status code: {response.status_code}")
 
@@ -366,6 +400,9 @@ def main():
         
         # Add names of Tactics and Techniques
         nameTTPs(excel_file_path)
+
+        # Adjusting cell width for better readability
+        adjust_cells(excel_file_path)
     else:
         print("[+] Multiple sheets detected. Processing using original workflow...")
         
@@ -386,6 +423,9 @@ def main():
 
         # Add names of Tactics and Techniques associated with TTP codes
         nameTTPs(excel_file_path)
+
+        # Adjusting cell width for better readability
+        adjust_cells(excel_file_path)
 
 if __name__ == "__main__":
     main()
